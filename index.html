@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Rilievi Rete Idrica - Accesso Protetto</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: Arial, sans-serif; }
+        body, html { height: 100%; width: 100%; overflow: hidden; position: relative; background-color: #f4f6f9; }
+        
+        /* SCHERMATA DI LOGIN */
+        #login-container {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: #e9ecef;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        }
+        .login-box {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+            width: 90%;
+            max-width: 400px;
+        }
+        .login-box h2 { text-align: center; margin-bottom: 20px; color: #007bff; }
+
+        /* INTERFACCIA MAPPA (NASCOSTA DI DEFAULT) */
+        #app-container { display: none; height: 100%; width: 100%; }
+        
+        #map { height: 100%; width: 100%; position: absolute; top: 0; left: 0; z-index: 1; }
+        
+        #menu-toggle {
+            position: absolute;
+            top: 10px; right: 10px; z-index: 1000;
+            background: white; border: 2px solid rgba(0,0,0,0.2); border-radius: 4px;
+            width: 44px; height: 44px; font-size: 24px; font-weight: bold; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+        }
+
+        #pannello-comandi {
+            position: absolute; bottom: 0; left: 0; width: 100%; height: 55vh;
+            background: #ffffff; padding: 15px; box-shadow: 0 -3px 10px rgba(0,0,0,0.2);
+            overflow-y: auto; z-index: 999;
+            transition: transform 0.3s ease-in-out;
+            transform: translateY(100%);
+        }
+
+        #pannello-comandi.attivo { transform: translateY(0); }
+
+        h3 { margin-bottom: 10px; color: #333; font-size: 16px; display: flex; justify-content: space-between; align-items: center; }
+        
+        .form-group { margin-bottom: 10px; }
+        label { display: block; font-size: 12px; color: #666; margin-bottom: 3px; font-weight: bold; }
+        input, select, textarea { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+        textarea { resize: vertical; min-height: 40px; font-family: Arial, sans-serif; }
+        input[type="file"] { padding: 5px; background: #f8f9fa; }
+        
+        .btn-container { display: flex; gap: 10px; margin-top: 10px; }
+        button { flex: 1; padding: 10px; border: none; border-radius: 4px; font-size: 14px; font-weight: bold; cursor: pointer; }
+        
+        #btn-invia { background-color: #007bff; color: white; }
+        #btn-annulla { background-color: #6c757d; color: white; display: none; }
+        
+        /* FUNZIONALITÀ AMMINISTRATORE (SCARICA DATI) */
+        #sezione-admin {
+            margin-top: 15px; padding-top: 15px; border-top: 2px dashed #eee;
+            display: none;
+        }
+        .btn-download { background-color: #28a745; color: white; width: 100%; }
+
+        /* PULSANTE LOGOUT */
+        .btn-logout { background-color: #dc3545; color: white; width: 100%; margin-top: 15px; }
+        
+        @media (min-width: 768px) {
+            #menu-toggle { display: none; }
+            #map { width: 70%; }
+            #pannello-comandi { 
+                top: 0; right: 0; left: auto; width: 30%; height: 100vh; 
+                transform: translateY(0); box-shadow: -3px 0 10px rgba(0,0,0,0.1);
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="login-container">
+        <div class="login-box">
+            <h2>Accedi al Sistema</h2>
+            <form id="form-login">
+                <div class="form-group">
+                    <label for="login-email">Email Operatore</label>
+                    <input type="email" id="login-email" placeholder="nome@azienda.it" required>
+                </div>
+                <div class="form-group">
+                    <label for="login-password">Password</label>
+                    <input type="password" id="login-password" placeholder="••••••••" required>
+                </div>
+                <button type="submit" style="background-color: #007bff; color: white; width: 100%; margin-top: 10px;">Entra</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="app-container">
+        <button id="menu-toggle" onclick="togglePannello()">☰</button>
+
+        <div id="map"></div>
+
+        <div id="pannello-comandi">
+            <h3 id="titolo-operazione">📍 Inserisci Nuovo PDI</h3>
+            <form id="form-pdi">
+                <div class="form-group">
+                    <label for="codice">Codice Identificativo</label>
+                    <input type="text" id="codice" placeholder="Es. SFI-01, MAN-04" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="tipologia">Tipologia Elemento</label>
+                    <select id="tipologia">
+                        <option value="Camera di Manovra">🎛️ Camera di Manovra</option>
+                        <option value="Sfiato">💨 Sfiato</option>
+                        <option value="Scarico">💧 Scarico</option>
+                        <option value="Pozzetto">🧪 Pozzetto</option>
+                        <option value="Impianto">🏢 Impianto</option>
+                        <option value="Segnalazione">🧑‍🚒 Segnalazione</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="stato">Stato Conservazione</label>
+                    <select id="stato">
+                        <option value="Ottimo">🟢 Ottimo</option>
+                        <option value="Verificare">🟡 Verificare</option>
+                        <option value="Critico">🔴 Critico</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="note">Note / Osservazioni sul Campo</label>
+                    <textarea id="note" placeholder="Inserisci anomalie, dettagli..."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="foto">Foto Rilievo (Scatta o Allega)</label>
+                    <input type="file" id="foto" accept="image/*" capture="environment">
+                </div>
+
+                <div class="btn-container">
+                    <button type="submit" id="btn-invia">📍 Inserisci PDI</button>
+                    <button type="button" id="btn-annulla" onclick="resettaModalitaModifica()">❌ Annulla</button>
+                </div>
+            </form>
+
+            <div id="sezione-admin">
+                <label>Strumenti Amministratore</label>
+                <button class="btn-download" onclick="scaricaDatiCSV()">📥 Scarica Dati Esportazione (CSV)</button>
+            </div>
+
+            <button class="btn-logout" onclick="eseguiLogout()">🚪 Disconnetti ed Esci</button>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        const SUPABASE_URL = "https://pxbnqrdiguziihhpfqcj.supabase.co"; 
+        const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB4Ym5xcmRpZ3V6aWloaHBmcWNqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzMjk3ODMsImV4cCI6MjA5NjkwNTc4M30.DVGx_deu0lnJrRdA9LqEbtj81QVrjsvHL9F7YSHcCiU";
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        let map;
+        let arrayMarkerMappa = [];
+        let datiPuntiLocali = []; 
+        let idPdiInModifica = null; 
+        let coordinataSelezionata = null; 
+        let urlFotoEsistente = null; 
+        let markerTemporaneoNuovoPunto = null; // Gestisce l'indicatore grafico temporaneo
+
+        // --- GESTIONE AUTENTICAZIONE (LOGIN / LOGOUT) ---
+        
+        document.getElementById('form-login').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const email = document.getElementById('login-email').value;
+            const password = document.getElementById('login-password').value;
+
+            const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+
+            if (error) {
+                alert("Accesso fallito: " + error.message);
+                return;
+            }
+
+            verificaSessioneUtente(data.user);
+        });
+
+        async function eseguiLogout() {
+            const { error } = await supabaseClient.auth.signOut();
+            if (error) { alert("Errore durante il logout"); return; }
+            
+            document.getElementById('app-container').style.display = 'none';
+            document.getElementById('login-container').style.display = 'flex';
+            document.getElementById('form-login').reset();
+            if(map) { map.remove(); map = null; } 
+            alert("Sessione chiusa correttamente.");
+        }
+
+        async function controlloSessioneIniziale() {
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            if (session) {
+                verificaSessioneUtente(session.user);
+            }
+        }
+
+        function verificaSessioneUtente(user) {
+            if (!user) return;
+
+            document.getElementById('login-container').style.display = 'none';
+            document.getElementById('app-container').style.display = 'block';
+
+            const canDownload = user.user_metadata && user.user_metadata.can_download === true;
+            
+            if (canDownload) {
+                document.getElementById('sezione-admin').style.display = 'block';
+            } else {
+                document.getElementById('sezione-admin').style.display = 'none';
+            }
+
+            if (!map) {
+                inizializzaMappa();
+                caricaPunti();
+            }
+        }
+
+        // --- FUNZIONALITÀ ESPORTAZIONE CSV ---
+        function scaricaDatiCSV() {
+            if (datiPuntiLocali.length === 0) { alert("Nessun dato disponibile da esportare."); return; }
+            
+            let righeCsv = ["ID;Codice;Tipologia;Stato;Note;Url_Foto"];
+            
+            datiPuntiLocali.forEach(p => {
+                righeCsv.push(`${p.id};"${p.codice || ''}";"${p.tipologia || ''}";"${p.stato || ''}";"${(p.note || '').replace(/(\r\n|\n|\r)/gm, " ")}";"${p.foto_url || ''}"`);
+            });
+
+            const blob = new Blob([righeCsv.join("\n")], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.setAttribute("download", `export_rilievi_${Date.now()}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // --- LOGICA APPLICAZIONE E MAPPA ---
+        function togglePannello() {
+            document.getElementById('pannello-comandi').classList.toggle('attivo');
+        }
+
+        function inizializzaMappa() {
+            map = L.map('map', { zoomControl: false }).setView([42.5000, 12.5000], 6);
+            L.control.zoom({ position: 'bottomleft' }).addTo(map);
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19, attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+
+            map.locate({ setView: true, maxZoom: 16 });
+
+            // Gestione del click sulla mappa con visualizzazione del PUNTINO grafico
+            map.on('click', function(e) {
+                if (idPdiInModifica !== null) {
+                    alert("Sei in modalità modifica dati. Clicca prima su 'Annulla'.");
+                    return;
+                }
+                coordinataSelezionata = e.latlng;
+                document.getElementById('titolo-operazione').innerText = `📍 Inserimento su: ${coordinataSelezionata.lat.toFixed(4)}, ${coordinataSelezionata.lng.toFixed(4)}`;
+                
+                // Rimuove il vecchio puntino temporaneo se esisteva già
+                if (markerTemporaneoNuovoPunto) {
+                    map.removeLayer(markerTemporaneoNuovoPunto);
+                }
+
+                // Disegna il nuovo puntino visivo temporaneo (colore di default blu tratteggiato)
+                markerTemporaneoNuovoPunto = L.marker(coordinataSelezionata).addTo(map);
+                markerTemporaneoNuovoPunto.bindTooltip("Nuovo Punto da salvare", { permanent: false, direction: 'top' }).openTooltip();
+
+                if (window.innerWidth < 768) document.getElementById('pannello-comandi').classList.add('attivo');
+            });
+        }
+
+        async function caricaPunti() {
+            const { data, error } = await supabaseClient.from('pdi').select('id, codice, tipologia, stato, posizione, foto_url, note');
+            if (error) { console.error(error.message); return; }
+            
+            datiPuntiLocali = data; 
+            arrayMarkerMappa.forEach(marker => map.removeLayer(marker));
+            arrayMarkerMappa = [];
+
+            data.forEach(elemento => {
+                if (!elemento.posizione) return; 
+                let lat, lng;
+                if (typeof elemento.posizione === 'object' && elemento.posizione.coordinates) {
+                    lng = parseFloat(elemento.posizione.coordinates[0]); lat = parseFloat(elemento.posizione.coordinates[1]);
+                }
+                if (isNaN(lat) || isNaN(lng)) return;
+
+                const tipoSafe = elemento.tipologia || "Generico";
+                const statoSafe = elemento.stato || "Non specificato";
+                const noteSafe = elemento.note || "Nessuna nota inserita.";
+
+                let iconaGrafica = "📌";
+                if (tipoSafe.includes("Sfiato")) iconaGrafica = "💨";
+                if (tipoSafe.includes("Camera")) iconaGrafica = "🎛️";
+                if (tipoSafe.includes("Scarico")) iconaGrafica = "💧";
+                if (tipoSafe.includes("Pozzetto")) iconaGrafica = "🧪";
+                if (tipoSafe.includes("Impianto")) iconaGrafica = "🏢";
+                if (tipoSafe.includes("Segnalazione")) iconaGrafica = "🧑‍🚒";
+
+                let coloreBordo = "🟢";
+                if (statoSafe === "Critico") coloreBordo = "🔴";
+                if (statoSafe === "Verificare") coloreBordo = "🟡";
+
+                const iconaPersonalizzata = L.divIcon({
+                    html: `<div style="font-size: 24px; text-shadow: 0px 0px 3px black;">${iconaGrafica}</div>`,
+                    iconSize: [30, 30], className: 'custom-marker-icon'
+                });
+
+                const marker = L.marker([lat, lng], { icon: iconaPersonalizzata }).addTo(map);
+
+                let stringaFotoHtml = "";
+                if (elemento.foto_url) {
+                    stringaFotoHtml = `<br><br><a href="${elemento.foto_url}" target="_blank"><img src="${elemento.foto_url}" style="width:100%; max-width:200px; border-radius:6px;" alt="Foto"></a>`;
+                }
+
+                marker.bindPopup(`
+                    <div style="font-family: Arial, sans-serif; font-size: 13px; max-width:210px; word-wrap: break-word;">
+                        <b style="font-size: 15px; color: #007bff;">${elemento.codice || 'Senza Codice'}</b><br><br>
+                        <b>Tipologia:</b> ${tipoSafe}<br>
+                        <b>Stato:</b> ${coloreBordo} ${statoSafe}<br>
+                        <b>Note:</b> <span style="color:#555; font-style:italic;">${noteSafe}</span>
+                        ${stringaFotoHtml}<br><br>
+                        <button onclick="apriModificaPdi(${elemento.id})" style="width:100%; background-color:#ffc107; border:none; padding:6px; border-radius:4px; font-weight:bold; cursor:pointer;">✏️ Modifica Dati</button>
+                    </div>
+                `);
+                arrayMarkerMappa.push(marker);
+            });
+        }
+
+        function apriModificaPdi(id) {
+            const pdi = datiPuntiLocali.find(p => p.id === id);
+            if (!pdi) return;
+
+            idPdiInModifica = id;
+            urlFotoEsistente = pdi.foto_url || null;
+
+            // Se c'era un puntino provvisorio di inserimento, lo puliamo
+            if (markerTemporaneoNuovoPunto) {
+                map.removeLayer(markerTemporaneoNuovoPunto);
+                markerTemporaneoNuovoPunto = null;
+            }
+
+            document.getElementById('codice').value = pdi.codice || '';
+            document.getElementById('tipologia').value = pdi.tipologia || 'Camera di Manovra';
+            document.getElementById('stato').value = pdi.stato || 'Ottimo';
+            document.getElementById('note').value = pdi.note || ''; 
+            document.getElementById('foto').value = ''; 
+            
+            document.getElementById('titolo-operazione').innerText = `✏️ Modifica PDI (ID: ${id})`;
+            document.getElementById('btn-invia').innerText = "💾 Salva Modifiche";
+            document.getElementById('btn-invia').style.backgroundColor = "#ffc107";
+            document.getElementById('btn-invia').style.color = "black";
+            document.getElementById('btn-annulla').style.display = "block";
+
+            map.closePopup();
+            if (window.innerWidth < 768) document.getElementById('pannello-comandi').classList.add('attivo');
+        }
+
+        function resettaModalitaModifica() {
+            idPdiInModifica = null; coordinataSelezionata = null; urlFotoEsistente = null;
+            
+            if (markerTemporaneoNuovoPunto) {
+                map.removeLayer(markerTemporaneoNuovoPunto);
+                markerTemporaneoNuovoPunto = null;
+            }
+
+            document.getElementById('form-pdi').reset();
+            document.getElementById('titolo-operazione').innerText = "📍 Inserisci Nuovo PDI";
+            document.getElementById('btn-invia').innerText = "📍 Inserisci PDI";
+            document.getElementById('btn-invia').style.backgroundColor = "#007bff";
+            document.getElementById('btn-invia').style.color = "white";
+            document.getElementById('btn-annulla').style.display = "none";
+            if (window.innerWidth < 768) document.getElementById('pannello-comandi').classList.remove('attivo');
+        }
+
+        document.getElementById('form-pdi').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const codice = document.getElementById('codice').value;
+            const tipologia = document.getElementById('tipologia').value;
+            const stato = document.getElementById('stato').value;
+            const note = document.getElementById('note').value;
+            const fileFoto = document.getElementById('foto').files[0];
+            
+            let urlFotoFinale = urlFotoEsistente; 
+
+            if (fileFoto) {
+                const nomeFile = `${Date.now()}_${fileFoto.name.replace(/\s+/g, '_')}`;
+                const { data: uploadData, error: uploadError } = await supabaseClient.storage.from('foto-pdi').upload(nomeFile, fileFoto);
+                if (uploadError) { alert("Errore caricamento foto: " + uploadError.message); return; }
+
+                const { data: publicUrlData } = supabaseClient.storage.from('foto-pdi').getPublicUrl(nomeFile);
+                urlFotoFinale = publicUrlData.publicUrl;
+            }
+
+            if (idPdiInModifica !== null) {
+                const { error } = await supabaseClient.from('pdi').update({ codice, tipologia, stato, note, foto_url: urlFotoFinale }).eq('id', idPdiInModifica);
+                if (error) { alert("Errore: " + error.message); return; }
+                alert("PDI aggiornato!");
+            } else {
+                if (!coordinataSelezionata) { alert("Seleziona un punto sulla mappa."); return; }
+                const wktPunto = `POINT(${coordinataSelezionata.lng} ${coordinataSelezionata.lat})`;
+                const { error } = await supabaseClient.from('pdi').insert([{ codice, tipologia, stato, note, foto_url: urlFotoFinale, posizione: wktPunto }]);
+                if (error) { alert("Errore: " + error.message); return; }
+                alert("Nuovo PDI registrato!");
+            }
+
+            resettaModalitaModifica();
+            caricaPunti();
+        });
+
+        window.onload = function() {
+            controlloSessioneIniziale();
+        };
+    </script>
+</body>
+</html>
