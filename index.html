@@ -33,7 +33,7 @@
         }
         .login-box h2 { text-align: center; margin-bottom: 20px; color: #007bff; }
 
-        /* INTERFACCIA MAPPA (NASCOSTA DI DEFAULT) */
+        /* INTERFACCIA MAPPA */
         #app-container { display: none; height: 100%; width: 100%; }
         
         #map { height: 100%; width: 100%; position: absolute; top: 0; left: 0; z-index: 1; }
@@ -48,7 +48,7 @@
         }
 
         #pannello-comandi {
-            position: absolute; bottom: 0; left: 0; width: 100%; height: 55vh;
+            position: absolute; bottom: 0; left: 0; width: 100%; height: 58vh;
             background: #ffffff; padding: 15px; box-shadow: 0 -3px 10px rgba(0,0,0,0.2);
             overflow-y: auto; z-index: 999;
             transition: transform 0.3s ease-in-out;
@@ -80,6 +80,20 @@
 
         /* PULSANTE LOGOUT */
         .btn-logout { background-color: #dc3545; color: white; width: 100%; margin-top: 15px; }
+
+        /* STILE PALLINI COLORATI SULLA MAPPA */
+        .marker-pallino {
+            border-radius: 50%;
+            border: 2px solid #ffffff;
+            box-shadow: 0px 0px 4px rgba(0,0,0,0.5);
+            width: 16px !important;
+            height: 16px !important;
+            margin-left: -8px !important;
+            margin-top: -8px !important;
+        }
+        .pallino-ottimo { background-color: #28a745; }
+        .pallino-verificare { background-color: #ffc107; }
+        .pallino-critico { background-color: #dc3545; }
         
         @media (min-width: 768px) {
             #menu-toggle { display: none; }
@@ -124,23 +138,29 @@
                 </div>
 
                 <div class="form-group">
-                    <label for="tipologia">Tipologia Elemento</label>
+                    <label for="tipologia">Tipologia Elemento (Seleziona da menu)</label>
                     <select id="tipologia">
-                        <option value="Camera di Manovra">🎛️ Camera di Manovra</option>
-                        <option value="Sfiato">💨 Sfiato</option>
-                        <option value="Scarico">💧 Scarico</option>
-                        <option value="Pozzetto">🧪 Pozzetto</option>
-                        <option value="Impianto">🏢 Impianto</option>
-                        <option value="Segnalazione">🧑‍🚒 Segnalazione</option>
+                        <option value="Camera di Manovra">Camera di Manovra</option>
+                        <option value="Sfiato">Sfiato</option>
+                        <option value="Scarico">Scarico</option>
+                        <option value="Pozzetto">Pozzetto</option>
+                        <option value="Impianto">Impianto</option>
+                        <option value="Segnalazione">Segnalazione</option>
+                        <option value="Personalizzata">-- Altra tipologia (scrivi sotto) --</option>
                     </select>
                 </div>
 
                 <div class="form-group">
-                    <label for="stato">Stato Conservazione</label>
+                    <label for="tipologia-manuale">Altra Tipologia (Personalizzata)</label>
+                    <input type="text" id="tipologia-manuale" placeholder="Es. Idrante, Valvola, Pozzo...">
+                </div>
+
+                <div class="form-group">
+                    <label for="stato">Stato Conservazione (Determina il colore del pallino)</label>
                     <select id="stato">
-                        <option value="Ottimo">🟢 Ottimo</option>
-                        <option value="Verificare">🟡 Verificare</option>
-                        <option value="Critico">🔴 Critico</option>
+                        <option value="Ottimo">🟢 Ottimo (Verde)</option>
+                        <option value="Verificare">🟡 Verificare (Giallo)</option>
+                        <option value="Critico">🔴 Critico (Rosso)</option>
                     </select>
                 </div>
 
@@ -182,73 +202,57 @@
         let idPdiInModifica = null; 
         let coordinataSelezionata = null; 
         let urlFotoEsistente = null; 
-        let markerTemporaneoNuovoPunto = null; // Gestisce l'indicatore grafico temporaneo
+        let markerTemporaneoNuovoPunto = null; 
 
-        // --- GESTIONE AUTENTICAZIONE (LOGIN / LOGOUT) ---
-        
+        // Gestione abilitazione/disabilitazione visiva del campo manuale basato sul menu a tendina
+        document.getElementById('tipologia').addEventListener('change', function() {
+            const inputManuale = document.getElementById('tipologia-manuale');
+            if (this.value === 'Personalizzata') {
+                inputManuale.focus();
+            }
+        });
+
+        // --- GESTIONE AUTENTICAZIONE ---
         document.getElementById('form-login').addEventListener('submit', async function(e) {
             e.preventDefault();
             const email = document.getElementById('login-email').value;
             const password = document.getElementById('login-password').value;
-
             const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-
-            if (error) {
-                alert("Accesso fallito: " + error.message);
-                return;
-            }
-
+            if (error) { alert("Accesso fallito: " + error.message); return; }
             verificaSessioneUtente(data.user);
         });
 
         async function eseguiLogout() {
             const { error } = await supabaseClient.auth.signOut();
-            if (error) { alert("Errore durante il logout"); return; }
-            
+            if (error) { alert("Errore nel logout"); return; }
             document.getElementById('app-container').style.display = 'none';
             document.getElementById('login-container').style.display = 'flex';
             document.getElementById('form-login').reset();
             if(map) { map.remove(); map = null; } 
-            alert("Sessione chiusa correttamente.");
+            alert("Sessione chiusa.");
         }
 
         async function controlloSessioneIniziale() {
             const { data: { session } } = await supabaseClient.auth.getSession();
-            if (session) {
-                verificaSessioneUtente(session.user);
-            }
+            if (session) { verificaSessioneUtente(session.user); }
         }
 
         function verificaSessioneUtente(user) {
             if (!user) return;
-
             document.getElementById('login-container').style.display = 'none';
             document.getElementById('app-container').style.display = 'block';
-
             const canDownload = user.user_metadata && user.user_metadata.can_download === true;
-            
-            if (canDownload) {
-                document.getElementById('sezione-admin').style.display = 'block';
-            } else {
-                document.getElementById('sezione-admin').style.display = 'none';
-            }
-
-            if (!map) {
-                inizializzaMappa();
-                caricaPunti();
-            }
+            document.getElementById('sezione-admin').style.display = canDownload ? 'block' : 'none';
+            if (!map) { inizializzaMappa(); caricaPunti(); }
         }
 
-        // --- FUNZIONALITÀ ESPORTAZIONE CSV ---
+        // --- ESPORTAZIONE CSV ---
         function scaricaDatiCSV() {
-            if (datiPuntiLocali.length === 0) { alert("Nessun dato disponibile da esportare."); return; }
-            
+            if (datiPuntiLocali.length === 0) { alert("Nessun dato da esportare."); return; }
             let righeCsv = ["ID;Codice;Tipologia;Stato;Note;Url_Foto"];
-            
             datiPuntiLocali.forEach(p => {
                 righeCsv.push(`${p.id};"${p.codice || ''}";"${p.tipologia || ''}";"${p.stato || ''}";"${(p.note || '').replace(/(\r\n|\n|\r)/gm, " ")}";"${p.foto_url || ''}"`);
             });
-
             const blob = new Blob([righeCsv.join("\n")], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement("a");
             link.href = URL.createObjectURL(blob);
@@ -258,39 +262,21 @@
             document.body.removeChild(link);
         }
 
-        // --- LOGICA APPLICAZIONE E MAPPA ---
-        function togglePannello() {
-            document.getElementById('pannello-comandi').classList.toggle('attivo');
-        }
+        // --- MAPPA ---
+        function togglePannello() { document.getElementById('pannello-comandi').classList.toggle('attivo'); }
 
         function inizializzaMappa() {
             map = L.map('map', { zoomControl: false }).setView([42.5000, 12.5000], 6);
             L.control.zoom({ position: 'bottomleft' }).addTo(map);
-
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                maxZoom: 19, attribution: '© OpenStreetMap contributors'
-            }).addTo(map);
-
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
             map.locate({ setView: true, maxZoom: 16 });
 
-            // Gestione del click sulla mappa con visualizzazione del PUNTINO grafico
             map.on('click', function(e) {
-                if (idPdiInModifica !== null) {
-                    alert("Sei in modalità modifica dati. Clicca prima su 'Annulla'.");
-                    return;
-                }
+                if (idPdiInModifica !== null) { alert("Sei in modalità modifica. Clicca prima su 'Annulla'."); return; }
                 coordinataSelezionata = e.latlng;
                 document.getElementById('titolo-operazione').innerText = `📍 Inserimento su: ${coordinataSelezionata.lat.toFixed(4)}, ${coordinataSelezionata.lng.toFixed(4)}`;
-                
-                // Rimuove il vecchio puntino temporaneo se esisteva già
-                if (markerTemporaneoNuovoPunto) {
-                    map.removeLayer(markerTemporaneoNuovoPunto);
-                }
-
-                // Disegna il nuovo puntino visivo temporaneo (colore di default blu tratteggiato)
+                if (markerTemporaneoNuovoPunto) map.removeLayer(markerTemporaneoNuovoPunto);
                 markerTemporaneoNuovoPunto = L.marker(coordinataSelezionata).addTo(map);
-                markerTemporaneoNuovoPunto.bindTooltip("Nuovo Punto da salvare", { permanent: false, direction: 'top' }).openTooltip();
-
                 if (window.innerWidth < 768) document.getElementById('pannello-comandi').classList.add('attivo');
             });
         }
@@ -312,27 +298,27 @@
                 if (isNaN(lat) || isNaN(lng)) return;
 
                 const tipoSafe = elemento.tipologia || "Generico";
-                const statoSafe = elemento.stato || "Non specificato";
-                const noteSafe = elemento.note || "Nessuna nota inserita.";
+                const statoSafe = elemento.stato || "Ottimo";
+                const noteSafe = elemento.note || "Nessuna nota.";
 
-                let iconaGrafica = "📌";
-                if (tipoSafe.includes("Sfiato")) iconaGrafica = "💨";
-                if (tipoSafe.includes("Camera")) iconaGrafica = "🎛️";
-                if (tipoSafe.includes("Scarico")) iconaGrafica = "💧";
-                if (tipoSafe.includes("Pozzetto")) iconaGrafica = "🧪";
-                if (tipoSafe.includes("Impianto")) iconaGrafica = "🏢";
-                if (tipoSafe.includes("Segnalazione")) iconaGrafica = "🧑‍🚒";
+                // Definizione classe CSS del pallino unificato in base allo STATO
+                let classeColorePallino = "pallino-ottimo";
+                let indicatoreTestualePopup = "🟢 Ottimo";
+                
+                if (statoSafe === "Verificare") {
+                    classeColorePallino = "pallino-verificare";
+                    indicatoreTestualePopup = "🟡 Verificare";
+                } else if (statoSafe === "Critico") {
+                    classeColorePallino = "pallino-critico";
+                    indicatoreTestualePopup = "🔴 Critico";
+                }
 
-                let coloreBordo = "🟢";
-                if (statoSafe === "Critico") coloreBordo = "🔴";
-                if (statoSafe === "Verificare") coloreBordo = "🟡";
-
-                const iconaPersonalizzata = L.divIcon({
-                    html: `<div style="font-size: 24px; text-shadow: 0px 0px 3px black;">${iconaGrafica}</div>`,
-                    iconSize: [30, 30], className: 'custom-marker-icon'
+                const iconaPallinoUnificato = L.divIcon({
+                    className: `marker-pallino ${classeColorePallino}`,
+                    iconSize: [16, 16]
                 });
 
-                const marker = L.marker([lat, lng], { icon: iconaPersonalizzata }).addTo(map);
+                const marker = L.marker([lat, lng], { icon: iconaPallinoUnificato }).addTo(map);
 
                 let stringaFotoHtml = "";
                 if (elemento.foto_url) {
@@ -343,7 +329,7 @@
                     <div style="font-family: Arial, sans-serif; font-size: 13px; max-width:210px; word-wrap: break-word;">
                         <b style="font-size: 15px; color: #007bff;">${elemento.codice || 'Senza Codice'}</b><br><br>
                         <b>Tipologia:</b> ${tipoSafe}<br>
-                        <b>Stato:</b> ${coloreBordo} ${statoSafe}<br>
+                        <b>Stato:</b> ${indicatoreTestualePopup}<br>
                         <b>Note:</b> <span style="color:#555; font-style:italic;">${noteSafe}</span>
                         ${stringaFotoHtml}<br><br>
                         <button onclick="apriModificaPdi(${elemento.id})" style="width:100%; background-color:#ffc107; border:none; padding:6px; border-radius:4px; font-weight:bold; cursor:pointer;">✏️ Modifica Dati</button>
@@ -360,17 +346,22 @@
             idPdiInModifica = id;
             urlFotoEsistente = pdi.foto_url || null;
 
-            // Se c'era un puntino provvisorio di inserimento, lo puliamo
-            if (markerTemporaneoNuovoPunto) {
-                map.removeLayer(markerTemporaneoNuovoPunto);
-                markerTemporaneoNuovoPunto = null;
-            }
+            if (markerTemporaneoNuovoPunto) { map.removeLayer(markerTemporaneoNuovoPunto); markerTemporaneoNuovoPunto = null; }
 
             document.getElementById('codice').value = pdi.codice || '';
-            document.getElementById('tipologia').value = pdi.tipologia || 'Camera di Manovra';
             document.getElementById('stato').value = pdi.stato || 'Ottimo';
             document.getElementById('note').value = pdi.note || ''; 
             document.getElementById('foto').value = ''; 
+
+            // Controllo tipologia per ripopolare correttamente il form di modifica
+            const opzioniMenu = ["Camera di Manovra", "Sfiato", "Scarico", "Pozzetto", "Impianto", "Segnalazione"];
+            if (opzioniMenu.includes(pdi.tipologia)) {
+                document.getElementById('tipologia').value = pdi.tipologia;
+                document.getElementById('tipologia-manuale').value = '';
+            } else {
+                document.getElementById('tipologia').value = 'Personalizzata';
+                document.getElementById('tipologia-manuale').value = pdi.tipologia || '';
+            }
             
             document.getElementById('titolo-operazione').innerText = `✏️ Modifica PDI (ID: ${id})`;
             document.getElementById('btn-invia').innerText = "💾 Salva Modifiche";
@@ -384,12 +375,7 @@
 
         function resettaModalitaModifica() {
             idPdiInModifica = null; coordinataSelezionata = null; urlFotoEsistente = null;
-            
-            if (markerTemporaneoNuovoPunto) {
-                map.removeLayer(markerTemporaneoNuovoPunto);
-                markerTemporaneoNuovoPunto = null;
-            }
-
+            if (markerTemporaneoNuovoPunto) { map.removeLayer(markerTemporaneoNuovoPunto); markerTemporaneoNuovoPunto = null; }
             document.getElementById('form-pdi').reset();
             document.getElementById('titolo-operazione').innerText = "📍 Inserisci Nuovo PDI";
             document.getElementById('btn-invia').innerText = "📍 Inserisci PDI";
@@ -402,18 +388,22 @@
         document.getElementById('form-pdi').addEventListener('submit', async function(e) {
             e.preventDefault();
             const codice = document.getElementById('codice').value;
-            const tipologia = document.getElementById('tipologia').value;
             const stato = document.getElementById('stato').value;
             const note = document.getElementById('note').value;
             const fileFoto = document.getElementById('foto').files[0];
             
+            // Logica di unificazione tipologia (Menu VS Manuale)
+            const valoreMenu = document.getElementById('tipologia').value;
+            const valoreManuale = document.getElementById('tipologia-manuale').value.trim();
+            let tipologia = (valoreMenu === 'Personalizzata' && valoreManuale !== '') ? valoreManuale : valoreMenu;
+            if (tipologia === 'Personalizzata' && valoreManuale === '') tipologia = "Generico";
+
             let urlFotoFinale = urlFotoEsistente; 
 
             if (fileFoto) {
                 const nomeFile = `${Date.now()}_${fileFoto.name.replace(/\s+/g, '_')}`;
                 const { data: uploadData, error: uploadError } = await supabaseClient.storage.from('foto-pdi').upload(nomeFile, fileFoto);
-                if (uploadError) { alert("Errore caricamento foto: " + uploadError.message); return; }
-
+                if (uploadError) { alert("Errore foto: " + uploadError.message); return; }
                 const { data: publicUrlData } = supabaseClient.storage.from('foto-pdi').getPublicUrl(nomeFile);
                 urlFotoFinale = publicUrlData.publicUrl;
             }
@@ -434,9 +424,7 @@
             caricaPunti();
         });
 
-        window.onload = function() {
-            controlloSessioneIniziale();
-        };
+        window.onload = function() { controlloSessioneIniziale(); };
     </script>
 </body>
 </html>
