@@ -94,6 +94,24 @@
         .pallino-ottimo { background-color: #28a745; }
         .pallino-verificare { background-color: #ffc107; }
         .pallino-critico { background-color: #dc3545; }
+
+        /* PULSANTE LOCALIZZAZIONE GPS PERSONALIZZATO */
+        .leaflet-control-gps {
+            background: white;
+            width: 34px;
+            height: 34px;
+            border-radius: 4px;
+            border: 2px solid rgba(0,0,0,0.2);
+            box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+        }
+        .leaflet-control-gps:hover { background: #f4f4f4; }
         
         @media (min-width: 768px) {
             #menu-toggle { display: none; }
@@ -203,13 +221,11 @@
         let coordinataSelezionata = null; 
         let urlFotoEsistente = null; 
         let markerTemporaneoNuovoPunto = null; 
+        let cerchioPrecisioneGps = null; 
 
-        // Gestione abilitazione/disabilitazione visiva del campo manuale basato sul menu a tendina
         document.getElementById('tipologia').addEventListener('change', function() {
             const inputManuale = document.getElementById('tipologia-manuale');
-            if (this.value === 'Personalizzata') {
-                inputManuale.focus();
-            }
+            if (this.value === 'Personalizzata') { inputManuale.focus(); }
         });
 
         // --- GESTIONE AUTENTICAZIONE ---
@@ -267,9 +283,64 @@
 
         function inizializzaMappa() {
             map = L.map('map', { zoomControl: false }).setView([42.5000, 12.5000], 6);
+            
             L.control.zoom({ position: 'bottomleft' }).addTo(map);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
-            map.locate({ setView: true, maxZoom: 16 });
+
+            // DEFINIZIONE LIVELLI MAPPA (Mappa Stradale e Mappa Satellitare)
+            const mappaStradale = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '© OpenStreetMap contributors'
+            });
+
+            const mappaSatellitare = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                maxZoom: 19,
+                attribution: 'Tiles © Esri — Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+            });
+
+            // Di default impostiamo la mappa stradale classica
+            mappaStradale.addTo(map);
+
+            // Configurazione del selettore dei livelli (posizionato in alto a sinistra per non sovrapporsi al menu di destra su mobile)
+            const mappeBase = {
+                "🗺️ Mappa Stradale": mappaStradale,
+                "🛰️ Mappa Satellitare": mappaSatellitare
+            };
+            L.control.layers(mappeBase, null, { position: 'topleft', collapsed: true }).addTo(map);
+
+            // Controllo personalizzato per il pulsante GPS "Centra Posizione"
+            const bottoneGpsControl = L.Control.extend({
+                options: { position: 'bottomleft' },
+                onAdd: function (map) {
+                    const contenitore = L.DomUtil.create('div', 'leaflet-control-gps');
+                    contenitore.innerHTML = '🎯';
+                    contenitore.title = 'Centra la mia posizione';
+                    
+                    contenitore.onclick = function(e) {
+                        e.stopPropagation();
+                        map.locate({ setView: true, maxZoom: 17, enableHighAccuracy: true });
+                    };
+                    return contenitore;
+                }
+            });
+            map.addControl(new bottoneGpsControl());
+
+            map.on('locationfound', function(e) {
+                if (cerchioPrecisioneGps) { map.removeLayer(cerchioPrecisioneGps); }
+                
+                cerchioPrecisioneGps = L.circle(e.latlng, {
+                    radius: e.accuracy,
+                    color: '#007bff',
+                    fillColor: '#007bff',
+                    fillOpacity: 0.15,
+                    weight: 1
+                }).addTo(map);
+            });
+
+            map.on('locationerror', function(e) {
+                alert("Impossibile rilevare la posizione GPS. Verifica i permessi del browser.");
+            });
+
+            map.locate({ setView: true, maxZoom: 16, enableHighAccuracy: true });
 
             map.on('click', function(e) {
                 if (idPdiInModifica !== null) { alert("Sei in modalità modifica. Clicca prima su 'Annulla'."); return; }
@@ -301,7 +372,6 @@
                 const statoSafe = elemento.stato || "Ottimo";
                 const noteSafe = elemento.note || "Nessuna nota.";
 
-                // Definizione classe CSS del pallino unificato in base allo STATO
                 let classeColorePallino = "pallino-ottimo";
                 let indicatoreTestualePopup = "🟢 Ottimo";
                 
@@ -326,13 +396,13 @@
                 }
 
                 marker.bindPopup(`
-                    <div style="font-family: Arial, sans-serif; font-size: 13px; max-width:210px; word-wrap: break-word;">
+                    <div style="font-family: Arial, sans-serif; font-size: 13px; max-width:210px; word-wrap: break-word; color:#333;">
                         <b style="font-size: 15px; color: #007bff;">${elemento.codice || 'Senza Codice'}</b><br><br>
                         <b>Tipologia:</b> ${tipoSafe}<br>
                         <b>Stato:</b> ${indicatoreTestualePopup}<br>
                         <b>Note:</b> <span style="color:#555; font-style:italic;">${noteSafe}</span>
                         ${stringaFotoHtml}<br><br>
-                        <button onclick="apriModificaPdi(${elemento.id})" style="width:100%; background-color:#ffc107; border:none; padding:6px; border-radius:4px; font-weight:bold; cursor:pointer;">✏️ Modifica Dati</button>
+                        <button onclick="apriModificaPdi(${elemento.id})" style="width:100%; background-color:#ffc107; border:none; padding:6px; border-radius:4px; font-weight:bold; cursor:pointer; color:black;">✏️ Modifica Dati</button>
                     </div>
                 `);
                 arrayMarkerMappa.push(marker);
@@ -353,7 +423,6 @@
             document.getElementById('note').value = pdi.note || ''; 
             document.getElementById('foto').value = ''; 
 
-            // Controllo tipologia per ripopolare correttamente il form di modifica
             const opzioniMenu = ["Camera di Manovra", "Sfiato", "Scarico", "Pozzetto", "Impianto", "Segnalazione"];
             if (opzioniMenu.includes(pdi.tipologia)) {
                 document.getElementById('tipologia').value = pdi.tipologia;
@@ -392,7 +461,6 @@
             const note = document.getElementById('note').value;
             const fileFoto = document.getElementById('foto').files[0];
             
-            // Logica di unificazione tipologia (Menu VS Manuale)
             const valoreMenu = document.getElementById('tipologia').value;
             const valoreManuale = document.getElementById('tipologia-manuale').value.trim();
             let tipologia = (valoreMenu === 'Personalizzata' && valoreManuale !== '') ? valoreManuale : valoreMenu;
