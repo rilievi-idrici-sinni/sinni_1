@@ -71,12 +71,34 @@
         #btn-invia { background-color: #007bff; color: white; }
         #btn-annulla { background-color: #6c757d; color: white; display: none; }
         
-        /* FUNZIONALITÀ AMMINISTRATORE (SCARICA DATI) */
+        /* FUNZIONALITÀ AMMINISTRATORE (SCARICA DATI E LOG) */
         #sezione-admin {
             margin-top: 15px; padding-top: 15px; border-top: 2px dashed #eee;
             display: none;
         }
-        .btn-download { background-color: #28a745; color: white; width: 100%; }
+        .btn-download { background-color: #28a745; color: white; width: 100%; margin-bottom: 15px; }
+
+        /* STILE DELLA SEZIONE LOG */
+        .log-container-box {
+            background: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            max-height: 180px;
+            overflow-y: auto;
+            padding: 8px;
+            font-size: 11px;
+            list-style: none;
+        }
+        .log-item {
+            padding: 5px 0;
+            border-bottom: 1px solid #eee;
+            color: #333;
+            line-height: 1.4;
+        }
+        .log-item:last-child { border-bottom: none; }
+        .log-date { color: #888; font-weight: bold; }
+        .log-action-ins { color: #28a745; font-weight: bold; }
+        .log-action-mod { color: #ffc107; font-weight: bold; }
 
         /* PULSANTE LOGOUT */
         .btn-logout { background-color: #dc3545; color: white; width: 100%; margin-top: 15px; }
@@ -199,8 +221,13 @@
             </form>
 
             <div id="sezione-admin">
-                <label>Strumenti Amministratore</label>
+                <label style="color: #28a745; font-size: 13px; margin-bottom: 5px; display: block;">🛠️ Pannello Amministratore</label>
                 <button class="btn-download" onclick="scaricaDatiCSV()">📥 Scarica Dati Esportazione (CSV)</button>
+                
+                <label style="margin-bottom: 5px; display: block;">📋 Registro Ultime Attività (LOG)</label>
+                <ul id="lista-log" class="log-container-box">
+                    <li class="log-item">Caricamento log in corso...</li>
+                </ul>
             </div>
 
             <button class="btn-logout" onclick="eseguiLogout()">🚪 Disconnetti ed Esci</button>
@@ -222,6 +249,7 @@
         let urlFotoEsistente = null; 
         let markerTemporaneoNuovoPunto = null; 
         let cerchioPrecisioneGps = null; 
+        let emailUtenteLoggato = "";
 
         document.getElementById('tipologia').addEventListener('change', function() {
             const inputManuale = document.getElementById('tipologia-manuale');
@@ -255,11 +283,54 @@
 
         function verificaSessioneUtente(user) {
             if (!user) return;
+            emailUtenteLoggato = user.email;
             document.getElementById('login-container').style.display = 'none';
             document.getElementById('app-container').style.display = 'block';
+            
             const canDownload = user.user_metadata && user.user_metadata.can_download === true;
-            document.getElementById('sezione-admin').style.display = canDownload ? 'block' : 'none';
+            if (canDownload) {
+                document.getElementById('sezione-admin').style.display = 'block';
+                caricaLogAttivita();
+            } else {
+                document.getElementById('sezione-admin').style.display = 'none';
+            }
+            
             if (!map) { inizializzaMappa(); caricaPunti(); }
+        }
+
+        // --- SCRITTURA E LETTURA LOG ---
+        async function registraLog(azione, codicePdi, dettagli) {
+            await supabaseClient.from('log_attivita').insert([{
+                operatore: emailUtenteLoggato,
+                azione: azione,
+                codice_pdi: codicePdi,
+                dettagli: dettagli
+            }]);
+            caricaLogAttivita(); // Rinfresca la lista se visibile
+        }
+
+        async function caricaLogAttivita() {
+            const listaUl = document.getElementById('lista-log');
+            if (!listaUl || document.getElementById('sezione-admin').style.display === 'none') return;
+
+            const { data, error } = await supabaseClient.from('log_attivita').select('*').order('data_ora', { ascending: false }).limit(20);
+            if (error) { listaUl.innerHTML = `<li class="log-item">Errore caricamento log</li>`; return; }
+            if (!data || data.length === 0) { listaUl.innerHTML = `<li class="log-item">Nessuna attività registrata.</li>`; return; }
+
+            listaUl.innerHTML = "";
+            data.forEach(log => {
+                const dateObj = new Date(log.data_ora);
+                const oraLocale = dateObj.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+                const dataLocale = dateObj.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
+                
+                const classeAzione = log.azione === 'Inserimento' ? 'log-action-ins' : 'log-action-mod';
+                const operatoreBreve = log.operatore.split('@')[0]; // Mostra solo la prima parte dell'email
+
+                const li = document.createElement('li');
+                li.className = 'log-item';
+                li.innerHTML = `<span class="log-date">[${dataLocale} ${oraLocale}]</span> <b>${operatoreBreve}</b> -> <span class="${classeAzione}">${log.azione}</span> PDI: <b>${log.codice_pdi || 'N/D'}</b> (${log.dettagli || ''})`;
+                listaUl.appendChild(li);
+            });
         }
 
         // --- ESPORTAZIONE CSV ---
@@ -283,38 +354,27 @@
 
         function inizializzaMappa() {
             map = L.map('map', { zoomControl: false }).setView([42.5000, 12.5000], 6);
-            
             L.control.zoom({ position: 'bottomleft' }).addTo(map);
 
-            // DEFINIZIONE LIVELLI MAPPA (Mappa Stradale e Mappa Satellitare)
             const mappaStradale = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                maxZoom: 19,
-                attribution: '© OpenStreetMap contributors'
+                maxZoom: 19, attribution: '© OpenStreetMap contributors'
             });
 
             const mappaSatellitare = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-                maxZoom: 19,
-                attribution: 'Tiles © Esri — Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+                maxZoom: 19, attribution: 'Tiles © Esri'
             });
 
-            // Di default impostiamo la mappa stradale classica
             mappaStradale.addTo(map);
 
-            // Configurazione del selettore dei livelli (posizionato in alto a sinistra per non sovrapporsi al menu di destra su mobile)
-            const mappeBase = {
-                "🗺️ Mappa Stradale": mappaStradale,
-                "🛰️ Mappa Satellitare": mappaSatellitare
-            };
+            const mappeBase = { "🗺️ Mappa Stradale": mappaStradale, "🛰️ Mappa Satellitare": mappaSatellitare };
             L.control.layers(mappeBase, null, { position: 'topleft', collapsed: true }).addTo(map);
 
-            // Controllo personalizzato per il pulsante GPS "Centra Posizione"
             const bottoneGpsControl = L.Control.extend({
                 options: { position: 'bottomleft' },
                 onAdd: function (map) {
                     const contenitore = L.DomUtil.create('div', 'leaflet-control-gps');
                     contenitore.innerHTML = '🎯';
                     contenitore.title = 'Centra la mia posizione';
-                    
                     contenitore.onclick = function(e) {
                         e.stopPropagation();
                         map.locate({ setView: true, maxZoom: 17, enableHighAccuracy: true });
@@ -326,18 +386,9 @@
 
             map.on('locationfound', function(e) {
                 if (cerchioPrecisioneGps) { map.removeLayer(cerchioPrecisioneGps); }
-                
                 cerchioPrecisioneGps = L.circle(e.latlng, {
-                    radius: e.accuracy,
-                    color: '#007bff',
-                    fillColor: '#007bff',
-                    fillOpacity: 0.15,
-                    weight: 1
+                    radius: e.accuracy, color: '#007bff', fillColor: '#007bff', fillOpacity: 0.15, weight: 1
                 }).addTo(map);
-            });
-
-            map.on('locationerror', function(e) {
-                alert("Impossibile rilevare la posizione GPS. Verifica i permessi del browser.");
             });
 
             map.locate({ setView: true, maxZoom: 16, enableHighAccuracy: true });
@@ -384,8 +435,7 @@
                 }
 
                 const iconaPallinoUnificato = L.divIcon({
-                    className: `marker-pallino ${classeColorePallino}`,
-                    iconSize: [16, 16]
+                    className: `marker-pallino ${classeColorePallino}`, iconSize: [16, 16]
                 });
 
                 const marker = L.marker([lat, lng], { icon: iconaPallinoUnificato }).addTo(map);
@@ -480,12 +530,14 @@
                 const { error } = await supabaseClient.from('pdi').update({ codice, tipologia, stato, note, foto_url: urlFotoFinale }).eq('id', idPdiInModifica);
                 if (error) { alert("Errore: " + error.message); return; }
                 alert("PDI aggiornato!");
+                await registraLog("Modifica", codice, `${tipologia} - ${stato}`);
             } else {
                 if (!coordinataSelezionata) { alert("Seleziona un punto sulla mappa."); return; }
                 const wktPunto = `POINT(${coordinataSelezionata.lng} ${coordinataSelezionata.lat})`;
                 const { error } = await supabaseClient.from('pdi').insert([{ codice, tipologia, stato, note, foto_url: urlFotoFinale, posizione: wktPunto }]);
                 if (error) { alert("Errore: " + error.message); return; }
                 alert("Nuovo PDI registrato!");
+                await registraLog("Inserimento", codice, `${tipologia} - ${stato}`);
             }
 
             resettaModalitaModifica();
