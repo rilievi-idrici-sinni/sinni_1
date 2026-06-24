@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-color=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Rilievi Rete Idrica - Accesso Protetto</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -503,7 +503,7 @@
             });
         }
 
-        async functionGrid eliminaPdiDiretto(id, codice) {
+        async function eliminaPdiDiretto(id, codice) {
             if (!utenteCorrenteIsAdmin) { alert("Azione non consentita."); return; }
             
             const conferma = confirm(`Sei sicuro di voler eliminare definitivamente il PDI ${codice}? Questa azione non è reversibile.`);
@@ -595,7 +595,7 @@
                 const wktPunto = `POINT(${coordinataSelezionata.lng} ${coordinataSelezionata.lat})`;
                 const { error } = await supabaseClient.from('pdi').insert([{ codice, tipologia, stato, note, foto_url: urlFotoFinale, posizione: wktPunto }]);
                 if (error) { alert("Errore: " + error.message); return; }
-                alert("Nuovo PDI registered!");
+                alert("Nuovo PDI registrato!");
                 await registraLog("Inserimento", codice, `${tipologia} - ${stato}`);
             }
 
