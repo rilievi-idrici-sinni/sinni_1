@@ -103,6 +103,7 @@
         .log-action-ins { color: #28a745; font-weight: bold; }
         .log-action-mod { color: #ffc107; font-weight: bold; }
         .log-action-del { color: #dc3545; font-weight: bold; }
+        .log-action-acc { color: #007bff; font-weight: bold; }
 
         /* PULSANTE LOGOUT */
         .btn-logout { background-color: #dc3545; color: white; width: 100%; margin-top: 15px; }
@@ -174,7 +175,6 @@
         <div id="map"></div>
 
         <div id="pannello-comandi">
-            <!-- BOX PER IDENTIFICAZIONE OPERATORE -->
             <div id="box-utente">👤 Operatore: Caricamento...</div>
 
             <h3 id="titolo-operazione">📍 Inserisci Nuovo PDI</h3>
@@ -326,6 +326,9 @@
                 document.getElementById('sezione-admin').style.display = 'none';
             }
             
+            // Registra l'accesso dell'utente nel registro LOG attività
+            await registraLog("Accesso", "", "Connessione al sistema effettuata");
+            
             if (!map) { inizializzaMappa(); caricaPunti(); }
         }
 
@@ -357,10 +360,13 @@
                 let classeAzione = 'log-action-ins';
                 if (log.azione === 'Modifica') classeAzione = 'log-action-mod';
                 if (log.azione === 'Eliminazione') classeAzione = 'log-action-del';
+                if (log.azione === 'Accesso') classeAzione = 'log-action-acc';
+
+                const stringaPdi = log.codice_pdi ? ` PDI: <b>${log.codice_pdi}</b>` : '';
 
                 const li = document.createElement('li');
                 li.className = 'log-item';
-                li.innerHTML = `<span class="log-date">[${dataLocale} ${oraLocale}]</span> <b>${log.operatore}</b> -> <span class="${classeAzione}">${log.azione}</span> PDI: <b>${log.codice_pdi || 'N/D'}</b> (${log.dettagli || ''})`;
+                li.innerHTML = `<span class="log-date">[${dataLocale} ${oraLocale}]</span> <b>${log.operatore}</b> -> <span class="${classeAzione}">${log.azione}</span>${stringaPdi} (${log.dettagli || ''})`;
                 listaUl.appendChild(li);
             });
         }
@@ -477,7 +483,6 @@
                     stringaFotoHtml = `<br><br><a href="${elemento.foto_url}" target="_blank"><img src="${elemento.foto_url}" style="width:100%; max-width:200px; border-radius:6px;" alt="Foto"></a>`;
                 }
 
-                // Generazione dinamica del pulsante Elimina solo se l'utente è un admin
                 let bottoneEliminaHtml = "";
                 if (utenteCorrenteIsAdmin) {
                     bottoneEliminaHtml = `<button onclick="eliminaPdiDiretto(${elemento.id}, '${elemento.codice || 'Senza Codice'}')" style="width:100%; background-color:#dc3545; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; cursor:pointer; margin-top:5px;">❌ Elimina PDI</button>`;
@@ -498,7 +503,7 @@
             });
         }
 
-        async function eliminaPdiDiretto(id, codice) {
+        async functionGrid eliminaPdiDiretto(id, codice) {
             if (!utenteCorrenteIsAdmin) { alert("Azione non consentita."); return; }
             
             const conferma = confirm(`Sei sicuro di voler eliminare definitivamente il PDI ${codice}? Questa azione non è reversibile.`);
@@ -590,7 +595,7 @@
                 const wktPunto = `POINT(${coordinataSelezionata.lng} ${coordinataSelezionata.lat})`;
                 const { error } = await supabaseClient.from('pdi').insert([{ codice, tipologia, stato, note, foto_url: urlFotoFinale, posizione: wktPunto }]);
                 if (error) { alert("Errore: " + error.message); return; }
-                alert("Nuovo PDI registrato!");
+                alert("Nuovo PDI registered!");
                 await registraLog("Inserimento", codice, `${tipologia} - ${stato}`);
             }
 
