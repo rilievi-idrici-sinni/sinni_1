@@ -59,6 +59,9 @@
 
         h3 { margin-bottom: 10px; color: #333; font-size: 16px; display: flex; justify-content: space-between; align-items: center; }
         
+        /* BOX DI BENVENUTO UTENTE */
+        #box-utente { background: #e7f1ff; color: #0c4128; padding: 8px 12px; border-radius: 4px; font-size: 12px; font-weight: bold; margin-bottom: 15px; border: 1px solid #b6d4fe; }
+
         .form-group { margin-bottom: 10px; }
         label { display: block; font-size: 12px; color: #666; margin-bottom: 3px; font-weight: bold; }
         input, select, textarea { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
@@ -170,6 +173,8 @@
         <div id="map"></div>
 
         <div id="pannello-comandi">
+            <div id="box-utente">👤 Operatore: Caricamento...</div>
+
             <h3 id="titolo-operazione">📍 Inserisci Nuovo PDI</h3>
             <form id="form-pdi">
                 <div class="form-group">
@@ -249,7 +254,7 @@
         let urlFotoEsistente = null; 
         let markerTemporaneoNuovoPunto = null; 
         let cerchioPrecisioneGps = null; 
-        let emailUtenteLoggato = "";
+        let firmaOperatoreAttivo = "";
 
         document.getElementById('tipologia').addEventListener('change', function() {
             const inputManuale = document.getElementById('tipologia-manuale');
@@ -281,14 +286,39 @@
             if (session) { verificaSessioneUtente(session.user); }
         }
 
-        function verificaSessioneUtente(user) {
+        async function verificaSessioneUtente(user) {
             if (!user) return;
-            emailUtenteLoggato = user.email;
+            
+            // Imposta una firma provvisoria basata sull'email
+            firmaOperatoreAttivo = user.email.split('@')[0];
+            
+            // Interroga la tabella ruoli_utenti per ricavare ruolo e nome_utente personalizzato
+            const { data: rUtente, error: errRuolo } = await supabaseClient
+                .from('ruoli_utenti')
+                .select('ruolo, nome_utente')
+                .eq('user_id', user.id)
+                .maybeSingle();
+
+            let displayNome = firmaOperatoreAttivo;
+            let isAdmin = false;
+
+            if (rUtente) {
+                if (rUtente.nome_utente && rUtente.nome_utente.trim() !== "") {
+                    firmaOperatoreAttivo = rUtente.nome_utente.trim();
+                    displayNome = rUtente.nome_utente.trim();
+                }
+                if (rUtente.ruolo === 'admin') {
+                    isAdmin = true;
+                }
+            }
+
+            // Aggiorna la dicitura sul pannello
+            document.getElementById('box-utente').innerText = `👤 Operatore: ${displayNome} (${isAdmin ? 'Admin' : 'Tecnico'})`;
+
             document.getElementById('login-container').style.display = 'none';
             document.getElementById('app-container').style.display = 'block';
             
-            const canDownload = user.user_metadata && user.user_metadata.can_download === true;
-            if (canDownload) {
+            if (isAdmin) {
                 document.getElementById('sezione-admin').style.display = 'block';
                 caricaLogAttivita();
             } else {
@@ -301,12 +331,12 @@
         // --- SCRITTURA E LETTURA LOG ---
         async function registraLog(azione, codicePdi, dettagli) {
             await supabaseClient.from('log_attivita').insert([{
-                operatore: emailUtenteLoggato,
+                operatore: firmaOperatoreAttivo, // Salva il nome_utente anziché l'email completa
                 azione: azione,
                 codice_pdi: codicePdi,
                 dettagli: dettagli
             }]);
-            caricaLogAttivita(); // Rinfresca la lista se visibile
+            caricaLogAttivita(); 
         }
 
         async function caricaLogAttivita() {
@@ -324,11 +354,10 @@
                 const dataLocale = dateObj.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
                 
                 const classeAzione = log.azione === 'Inserimento' ? 'log-action-ins' : 'log-action-mod';
-                const operatoreBreve = log.operatore.split('@')[0]; // Mostra solo la prima parte dell'email
 
                 const li = document.createElement('li');
                 li.className = 'log-item';
-                li.innerHTML = `<span class="log-date">[${dataLocale} ${oraLocale}]</span> <b>${operatoreBreve}</b> -> <span class="${classeAzione}">${log.azione}</span> PDI: <b>${log.codice_pdi || 'N/D'}</b> (${log.dettagli || ''})`;
+                li.innerHTML = `<span class="log-date">[${dataLocale} ${oraLocale}]</span> <b>${log.operatore}</b> -> <span class="${classeAzione}">${log.azione}</span> PDI: <b>${log.codice_pdi || 'N/D'}</b> (${log.dettagli || ''})`;
                 listaUl.appendChild(li);
             });
         }
@@ -511,9 +540,9 @@
             const note = document.getElementById('note').value;
             const fileFoto = document.getElementById('foto').files[0];
             
-            const valoreMenu = document.getElementById('tipologia').value;
+            const valeurMenu = document.getElementById('tipologia').value;
             const valoreManuale = document.getElementById('tipologia-manuale').value.trim();
-            let tipologia = (valoreMenu === 'Personalizzata' && valoreManuale !== '') ? valoreManuale : valoreMenu;
+            let tipologia = (valeurMenu === 'Personalizzata' && valoreManuale !== '') ? valoreManuale : valeurMenu;
             if (tipologia === 'Personalizzata' && valoreManuale === '') tipologia = "Generico";
 
             let urlFotoFinale = urlFotoEsistente; 
