@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-color=1.0, user-scalable=no">
     <title>Rilievi Rete Idrica - Accesso Protetto</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -102,6 +102,7 @@
         .log-date { color: #888; font-weight: bold; }
         .log-action-ins { color: #28a745; font-weight: bold; }
         .log-action-mod { color: #ffc107; font-weight: bold; }
+        .log-action-del { color: #dc3545; font-weight: bold; }
 
         /* PULSANTE LOGOUT */
         .btn-logout { background-color: #dc3545; color: white; width: 100%; margin-top: 15px; }
@@ -173,6 +174,7 @@
         <div id="map"></div>
 
         <div id="pannello-comandi">
+            <!-- BOX PER IDENTIFICAZIONE OPERATORE -->
             <div id="box-utente">👤 Operatore: Caricamento...</div>
 
             <h3 id="titolo-operazione">📍 Inserisci Nuovo PDI</h3>
@@ -255,6 +257,7 @@
         let markerTemporaneoNuovoPunto = null; 
         let cerchioPrecisioneGps = null; 
         let firmaOperatoreAttivo = "";
+        let utenteCorrenteIsAdmin = false;
 
         document.getElementById('tipologia').addEventListener('change', function() {
             const inputManuale = document.getElementById('tipologia-manuale');
@@ -278,6 +281,7 @@
             document.getElementById('login-container').style.display = 'flex';
             document.getElementById('form-login').reset();
             if(map) { map.remove(); map = null; } 
+            utenteCorrenteIsAdmin = false;
             alert("Sessione chiusa.");
         }
 
@@ -289,10 +293,8 @@
         async function verificaSessioneUtente(user) {
             if (!user) return;
             
-            // Imposta una firma provvisoria basata sull'email
             firmaOperatoreAttivo = user.email.split('@')[0];
             
-            // Interroga la tabella ruoli_utenti per ricavare ruolo e nome_utente personalizzato
             const { data: rUtente, error: errRuolo } = await supabaseClient
                 .from('ruoli_utenti')
                 .select('ruolo, nome_utente')
@@ -300,25 +302,24 @@
                 .maybeSingle();
 
             let displayNome = firmaOperatoreAttivo;
-            let isAdmin = false;
+            utenteCorrenteIsAdmin = false;
 
             if (rUtente) {
                 if (rUtente.nome_utente && rUtente.nome_utente.trim() !== "") {
                     firmaOperatoreAttivo = rUtente.nome_utente.trim();
                     displayNome = rUtente.nome_utente.trim();
                 }
-                if (rUtente.ruolo === 'admin') {
-                    isAdmin = true;
+                if (rUtente.ruolo && rUtente.ruolo.trim().toLowerCase() === 'admin') {
+                    utenteCorrenteIsAdmin = true;
                 }
             }
 
-            // Aggiorna la dicitura sul pannello
-            document.getElementById('box-utente').innerText = `👤 Operatore: ${displayNome} (${isAdmin ? 'Admin' : 'Tecnico'})`;
+            document.getElementById('box-utente').innerText = `👤 Operatore: ${displayNome} (${utenteCorrenteIsAdmin ? 'Admin' : 'Tecnico'})`;
 
             document.getElementById('login-container').style.display = 'none';
             document.getElementById('app-container').style.display = 'block';
             
-            if (isAdmin) {
+            if (utenteCorrenteIsAdmin) {
                 document.getElementById('sezione-admin').style.display = 'block';
                 caricaLogAttivita();
             } else {
@@ -331,7 +332,7 @@
         // --- SCRITTURA E LETTURA LOG ---
         async function registraLog(azione, codicePdi, dettagli) {
             await supabaseClient.from('log_attivita').insert([{
-                operatore: firmaOperatoreAttivo, // Salva il nome_utente anziché l'email completa
+                operatore: firmaOperatoreAttivo, 
                 azione: azione,
                 codice_pdi: codicePdi,
                 dettagli: dettagli
@@ -353,7 +354,9 @@
                 const oraLocale = dateObj.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
                 const dataLocale = dateObj.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
                 
-                const classeAzione = log.azione === 'Inserimento' ? 'log-action-ins' : 'log-action-mod';
+                let classeAzione = 'log-action-ins';
+                if (log.azione === 'Modifica') classeAzione = 'log-action-mod';
+                if (log.azione === 'Eliminazione') classeAzione = 'log-action-del';
 
                 const li = document.createElement('li');
                 li.className = 'log-item';
@@ -474,6 +477,12 @@
                     stringaFotoHtml = `<br><br><a href="${elemento.foto_url}" target="_blank"><img src="${elemento.foto_url}" style="width:100%; max-width:200px; border-radius:6px;" alt="Foto"></a>`;
                 }
 
+                // Generazione dinamica del pulsante Elimina solo se l'utente è un admin
+                let bottoneEliminaHtml = "";
+                if (utenteCorrenteIsAdmin) {
+                    bottoneEliminaHtml = `<button onclick="eliminaPdiDiretto(${elemento.id}, '${elemento.codice || 'Senza Codice'}')" style="width:100%; background-color:#dc3545; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; cursor:pointer; margin-top:5px;">❌ Elimina PDI</button>`;
+                }
+
                 marker.bindPopup(`
                     <div style="font-family: Arial, sans-serif; font-size: 13px; max-width:210px; word-wrap: break-word; color:#333;">
                         <b style="font-size: 15px; color: #007bff;">${elemento.codice || 'Senza Codice'}</b><br><br>
@@ -482,10 +491,26 @@
                         <b>Note:</b> <span style="color:#555; font-style:italic;">${noteSafe}</span>
                         ${stringaFotoHtml}<br><br>
                         <button onclick="apriModificaPdi(${elemento.id})" style="width:100%; background-color:#ffc107; border:none; padding:6px; border-radius:4px; font-weight:bold; cursor:pointer; color:black;">✏️ Modifica Dati</button>
+                        ${bottoneEliminaHtml}
                     </div>
                 `);
                 arrayMarkerMappa.push(marker);
             });
+        }
+
+        async function eliminaPdiDiretto(id, codice) {
+            if (!utenteCorrenteIsAdmin) { alert("Azione non consentita."); return; }
+            
+            const conferma = confirm(`Sei sicuro di voler eliminare definitivamente il PDI ${codice}? Questa azione non è reversibile.`);
+            if (!conferma) return;
+
+            const { error } = await supabaseClient.from('pdi').delete().eq('id', id);
+            if (error) { alert("Errore durante l'eliminazione: " + error.message); return; }
+
+            alert("PDI eliminato con successo.");
+            map.closePopup();
+            await registraLog("Eliminazione", codice, "Rimosso direttamente dalla mappa");
+            caricaPunti();
         }
 
         function apriModificaPdi(id) {
