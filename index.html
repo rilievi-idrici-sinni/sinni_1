@@ -106,7 +106,7 @@
             </div>
         </div>
 
-        <!-- NUOVA SEZIONE: NAVIGAZIONE E CONDIVISIONE PDI WHATSAPP -->
+        <!-- SEZIONE: NAVIGAZIONE E CONDIVISIONE PDI WHATSAPP -->
         <div class="panel panel-large">
             <h3>Condivisione Stradale PDI (Geolocalizzazione PostGIS)</h3>
             <label for="pdi-share-code">Inserisci Codice PDI per generare il link di navigazione Google Maps per le squadre esterne</label>
@@ -295,7 +295,6 @@
             }
         }
 
-        // NUOVA FUNZIONE: Estrazione geometrica PostGIS ed invio WhatsApp
         async function cercaECondividiPDI() {
             const searchInput = document.getElementById('pdi-share-code').value.trim();
             const output = document.getElementById('pdi-share-output');
@@ -308,7 +307,6 @@
             output.innerHTML = '<p style="color:#888;">Interrogazione coordinate PostGIS in corso...</p>';
 
             try {
-                // Utilizziamo st_asgeojson per convertire il binario geometry EWKB mostrato nello screenshot in un oggetto JSON leggibile dal JS
                 const { data, error } = await supabaseAdmin
                     .from('pdi')
                     .select(`id, stato, foto_url, geojson:posizione.geojson()`)
@@ -321,7 +319,6 @@
                 }
 
                 if (!data || data.length === 0) {
-                    // Se non trova corrispondenze numeriche rigide, effettuiamo un secondo tentativo a spettro ampio
                     const { data: fallbackData, error: err2 } = await supabaseAdmin.from('pdi').select('id, stato, foto_url, geojson:posizione.geojson()').limit(5);
                     if (fallbackData && fallbackData.length > 0) {
                         output.innerHTML = `<p style="color:#dd6b20;">Nessun PDI trovato per "${searchInput}". Ecco i primi disponibili nel sistema:</p>`;
@@ -350,7 +347,6 @@
                     return;
                 }
 
-                // Parsifichiamo l'output Point generato da PostGIS
                 const geometria = JSON.parse(pdiTrovato.geojson);
                 const longitudine = geometria.coordinates[0];
                 const latitudine = geometria.coordinates[1];
@@ -499,7 +495,7 @@
 
         function avviaDownloadCSV(contenuto, nomeFile) {
             try {
-                const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), contenido], { type: "text/csv;charset=utf-8;" });
+                const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), contenuto], { type: "text/csv;charset=utf-8;" });
                 const link = document.createElement("a");
                 
                 if (window.navigator && window.navigator.msSaveOrOpenBlob) {
@@ -604,7 +600,7 @@
                     grid.appendChild(card);
                 }
             } catch (err) {
-                outputContainer.innerHTML = `<p style="color:#e53e3e;">Errore di caricamento storage: ${err.message}</p>';
+                outputContainer.innerHTML = `<p style="color:#e53e3e;">Errore di caricamento storage: ${err.message}</p>`;
             }
         }
     </script>
