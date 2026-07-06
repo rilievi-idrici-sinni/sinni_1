@@ -441,6 +441,24 @@
             });
         }
 
+        // --- FUNZIONE DI CONDIVISIONE ---
+        function condividiPdi(codice, tipologia, stato, lat, lng) {
+            const testoCondivisione = `📍 *Rilievo PDI Rete Idrica*\n\n🔹 *Codice:* ${codice}\n🔹 *Tipologia:* ${tipologia}\n🔹 *Stato:* ${stato}\n📍 *Coordinate:* ${lat}, ${lng}\n\n🗺️ _Vedi su Google Maps:_\nhttps://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+            
+            if (navigator.share) {
+                navigator.share({
+                    title: `PDI ${codice}`,
+                    text: testoCondivisione
+                }).catch(err => console.log("Errore o annullamento condivisione", err));
+            } else {
+                navigator.clipboard.writeText(testoCondivisione).then(() => {
+                    alert("Testo e link del PDI copiati negli appunti!");
+                }).catch(err => {
+                    alert("Impossibile copiare il link automaticamente.");
+                });
+            }
+        }
+
         async function caricaPunti() {
             const { data, error } = await supabaseClient.from('pdi').select('id, codice, tipologia, stato, posizione, foto_url, note');
             if (error) { console.error(error.message); return; }
@@ -495,7 +513,8 @@
                         <b>Stato:</b> ${indicatoreTestualePopup}<br>
                         <b>Note:</b> <span style="color:#555; font-style:italic;">${noteSafe}</span>
                         ${stringaFotoHtml}<br><br>
-                        <button onclick="apriModificaPdi(${elemento.id})" style="width:100%; background-color:#ffc107; border:none; padding:6px; border-radius:4px; font-weight:bold; cursor:pointer; color:black;">✏️ Modifica Dati</button>
+                        <button onclick="apriModificaPdi(${elemento.id})" style="width:100%; background-color:#ffc107; border:none; padding:6px; border-radius:4px; font-weight:bold; cursor:pointer; color:black; margin-bottom:5px;">✏️ Modifica Dati</button>
+                        <button onclick="condividiPdi('${elemento.codice || 'Senza Codice'}', '${tipoSafe}', '${statoSafe}', ${lat}, ${lng})" style="width:100%; background-color:#17a2b8; border:none; padding:6px; border-radius:4px; font-weight:bold; cursor:pointer; color:white;">🔗 Condividi PDI</button>
                         ${bottoneEliminaHtml}
                     </div>
                 `);
