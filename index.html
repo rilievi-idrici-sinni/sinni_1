@@ -335,7 +335,7 @@
         async function registraLog(azione, codicePdi, dettagli) {
             await supabaseClient.from('log_attivita').insert([{
                 operatore: firmaOperatoreAttivo, 
-                azione: action = azione,
+                azione: azione,
                 codice_pdi: codicePdi,
                 dettagli: dettagli
             }]);
@@ -442,7 +442,6 @@
 
         // --- FUNZIONE DI NAVIGAZIONE DIRETTA ---
         function avviaNavigazionePdi(lat, lng) {
-            // Genera il link di navigazione turn-by-turn universale (Google Maps Directions API)
             const urlNavigazione = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
             window.open(urlNavigazione, '_blank');
         }
@@ -605,9 +604,9 @@
 
             if (fileFoto) {
                 const nomeFile = `${Date.now()}_${fileFoto.name.replace(/\s+/g, '_')}`;
-                const { data: uploadData, error: uploadError } = await supabaseClient.storage.from('foto-pdi').upload(nomeFile, fileFoto);
+                const { data: uploadData, error: uploadError } = await supabaseClient.storage.from('foto_pdi').upload(nomeFile, fileFoto);
                 if (uploadError) { alert("Errore foto: " + uploadError.message); return; }
-                const { data: publicUrlData } = supabaseClient.storage.from('foto-pdi').getPublicUrl(nomeFile);
+                const { data: publicUrlData } = supabaseClient.storage.from('foto_pdi').getPublicUrl(nomeFile);
                 urlFotoFinale = publicUrlData.publicUrl;
             }
 
