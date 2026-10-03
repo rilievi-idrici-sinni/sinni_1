@@ -185,6 +185,15 @@
                 </div>
 
                 <div class="form-group">
+                    <label for="condotta">Condotta Idrica</label>
+                    <select id="condotta" required>
+                        <option value="">-- Seleziona Condotta --</option>
+                        <option value="Sinni">Sinni</option>
+                        <option value="Paoloni">Paoloni</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
                     <label for="tipologia">Tipologia Elemento (Seleziona da menu)</label>
                     <select id="tipologia">
                         <option value="Camera di Manovra">Camera di Manovra</option>
@@ -373,9 +382,9 @@
         // --- ESPORTAZIONE CSV ---
         function scaricaDatiCSV() {
             if (datiPuntiLocali.length === 0) { alert("Nessun dato da esportare."); return; }
-            let righeCsv = ["ID;Codice;Tipologia;Stato;Note;Url_Foto"];
+            let righeCsv = ["ID;Codice;Condotta;Tipologia;Stato;Note;Url_Foto"];
             datiPuntiLocali.forEach(p => {
-                righeCsv.push(`${p.id};"${p.codice || ''}";"${p.tipologia || ''}";"${p.stato || ''}";"${(p.note || '').replace(/(\r\n|\n|\r)/gm, " ")}";"${p.foto_url || ''}"`);
+                righeCsv.push(`${p.id};"${p.codice || ''}";"${p.condotta || ''}";"${p.tipologia || ''}";"${p.stato || ''}";"${(p.note || '').replace(/(\r\n|\n|\r)/gm, " ")}";"${p.foto_url || ''}"`);
             });
             const blob = new Blob([righeCsv.join("\n")], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement("a");
@@ -465,7 +474,7 @@
         }
 
         async function caricaPunti() {
-            const { data, error } = await supabaseClient.from('pdi').select('id, codice, tipologia, stato, posizione, foto_url, note');
+            const { data, error } = await supabaseClient.from('pdi').select('id, codice, condotta, tipologia, stato, posizione, foto_url, note');
             if (error) { console.error(error.message); return; }
             
             datiPuntiLocali = data; 
@@ -480,6 +489,7 @@
                 }
                 if (isNaN(lat) || isNaN(lng)) return;
 
+                const condottaSafe = elemento.condotta || "Non specificata";
                 const tipoSafe = elemento.tipologia || "Generico";
                 const statoSafe = elemento.stato || "Ottimo";
                 const noteSafe = elemento.note || "Nessuna nota.";
@@ -513,7 +523,8 @@
 
                 marker.bindPopup(`
                     <div style="font-family: Arial, sans-serif; font-size: 13px; max-width:210px; word-wrap: break-word; color:#333;">
-                        <b style="font-size: 15px; color: #007bff;">${elemento.codice || 'Senza Codice'}</b><br><br>
+                        <b style="font-size: 15px; color: #007bff;">${elemento.codice || 'Senza Codice'}</b><br>
+                        <span style="font-size: 12px; color: #17a2b8; font-weight: bold;">💧 Condotta: ${condottaSafe}</span><br><br>
                         <b>Tipologia:</b> ${tipoSafe}<br>
                         <b>Stato:</b> ${indicatoreTestualePopup}<br>
                         <b>Note:</b> <span style="color:#555; font-style:italic;">${noteSafe}</span>
@@ -553,6 +564,7 @@
             if (markerTemporaneoNuovoPunto) { map.removeLayer(markerTemporaneoNuovoPunto); markerTemporaneoNuovoPunto = null; }
 
             document.getElementById('codice').value = pdi.codice || '';
+            document.getElementById('condotta').value = pdi.condotta || '';
             document.getElementById('stato').value = pdi.stato || 'Ottimo';
             document.getElementById('note').value = pdi.note || ''; 
             document.getElementById('foto').value = ''; 
@@ -591,6 +603,7 @@
         document.getElementById('form-pdi').addEventListener('submit', async function(e) {
             e.preventDefault();
             const codice = document.getElementById('codice').value;
+            const condotta = document.getElementById('condotta').value;
             const stato = document.getElementById('stato').value;
             const note = document.getElementById('note').value;
             const fileFoto = document.getElementById('foto').files[0];
@@ -611,17 +624,34 @@
             }
 
             if (idPdiInModifica !== null) {
-                const { error } = await supabaseClient.from('pdi').update({ codice, tipologia, stato, note, foto_url: urlFotoFinale }).eq('id', idPdiInModifica);
+                const { error } = await supabaseClient.from('pdi').update({ 
+                    codice, 
+                    condotta, 
+                    tipologia, 
+                    stato, 
+                    note, 
+                    foto_url: urlFotoFinale 
+                }).eq('id', idPdiInModifica);
+
                 if (error) { alert("Errore: " + error.message); return; }
                 alert("PDI aggiornato!");
-                await registraLog("Modifica", codice, `${tipologia} - ${stato}`);
+                await registraLog("Modifica", codice, `[Condotta ${condotta}] ${tipologia} - ${stato}`);
             } else {
                 if (!coordinataSelezionata) { alert("Seleziona un punto sulla mappa."); return; }
                 const wktPunto = `POINT(${coordinataSelezionata.lng} ${coordinataSelezionata.lat})`;
-                const { error } = await supabaseClient.from('pdi').insert([{ codice, tipologia, stato, note, foto_url: urlFotoFinale, posizione: wktPunto }]);
+                const { error } = await supabaseClient.from('pdi').insert([{ 
+                    codice, 
+                    condotta, 
+                    tipologia, 
+                    stato, 
+                    note, 
+                    foto_url: urlFotoFinale, 
+                    posizione: wktPunto 
+                }]);
+
                 if (error) { alert("Errore: " + error.message); return; }
                 alert("Nuovo PDI registrato!");
-                await registraLog("Inserimento", codice, `${tipologia} - ${stato}`);
+                await registraLog("Inserimento", codice, `[Condotta ${condotta}] ${tipologia} - ${stato}`);
             }
 
             resettaModalitaModifica();
