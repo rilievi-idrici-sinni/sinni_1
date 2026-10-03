@@ -382,9 +382,9 @@
         // --- ESPORTAZIONE CSV ---
         function scaricaDatiCSV() {
             if (datiPuntiLocali.length === 0) { alert("Nessun dato da esportare."); return; }
-            let righeCsv = ["ID;Codice;Condotta;Tipologia;Stato;Note;Url_Foto"];
+            let righeCsv = ["ID;Codice;Condotta;Tipologia;Stato;Operatore;Note;Url_Foto"];
             datiPuntiLocali.forEach(p => {
-                righeCsv.push(`${p.id};"${p.codice || ''}";"${p.condotta || ''}";"${p.tipologia || ''}";"${p.stato || ''}";"${(p.note || '').replace(/(\r\n|\n|\r)/gm, " ")}";"${p.foto_url || ''}"`);
+                righeCsv.push(`${p.id};"${p.codice || ''}";"${p.condotta || ''}";"${p.tipologia || ''}";"${p.stato || ''}";"${p.operatore || ''}";"${(p.note || '').replace(/(\r\n|\n|\r)/gm, " ")}";"${p.foto_url || ''}"`);
             });
             const blob = new Blob([righeCsv.join("\n")], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement("a");
@@ -474,7 +474,7 @@
         }
 
         async function caricaPunti() {
-            const { data, error } = await supabaseClient.from('pdi').select('id, codice, condotta, tipologia, stato, posizione, foto_url, note');
+            const { data, error } = await supabaseClient.from('pdi').select('id, codice, condotta, tipologia, stato, posizione, foto_url, note, operatore');
             if (error) { console.error(error.message); return; }
             
             datiPuntiLocali = data; 
@@ -493,6 +493,7 @@
                 const tipoSafe = elemento.tipologia || "Generico";
                 const statoSafe = elemento.stato || "Ottimo";
                 const noteSafe = elemento.note || "Nessuna nota.";
+                const operatoreSafe = elemento.operatore || "N.D.";
 
                 let classeColorePallino = "pallino-ottimo";
                 let indicatoreTestualePopup = "🟢 Ottimo";
@@ -524,7 +525,8 @@
                 marker.bindPopup(`
                     <div style="font-family: Arial, sans-serif; font-size: 13px; max-width:210px; word-wrap: break-word; color:#333;">
                         <b style="font-size: 15px; color: #007bff;">${elemento.codice || 'Senza Codice'}</b><br>
-                        <span style="font-size: 12px; color: #17a2b8; font-weight: bold;">💧 Condotta: ${condottaSafe}</span><br><br>
+                        <span style="font-size: 12px; color: #17a2b8; font-weight: bold;">💧 Condotta: ${condottaSafe}</span><br>
+                        <span style="font-size: 11px; color: #666;">👤 Operatore: ${operatoreSafe}</span><br><br>
                         <b>Tipologia:</b> ${tipoSafe}<br>
                         <b>Stato:</b> ${indicatoreTestualePopup}<br>
                         <b>Note:</b> <span style="color:#555; font-style:italic;">${noteSafe}</span>
@@ -630,7 +632,8 @@
                     tipologia, 
                     stato, 
                     note, 
-                    foto_url: urlFotoFinale 
+                    foto_url: urlFotoFinale,
+                    operatore: firmaOperatoreAttivo
                 }).eq('id', idPdiInModifica);
 
                 if (error) { alert("Errore: " + error.message); return; }
@@ -646,7 +649,8 @@
                     stato, 
                     note, 
                     foto_url: urlFotoFinale, 
-                    posizione: wktPunto 
+                    posizione: wktPunto,
+                    operatore: firmaOperatoreAttivo
                 }]);
 
                 if (error) { alert("Errore: " + error.message); return; }
